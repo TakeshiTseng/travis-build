@@ -5,12 +5,24 @@ module Travis
     class Git
       class Clone < Struct.new(:sh, :data)
         def apply
-          sh.fold 'git.checkout' do
-            clone_or_fetch
-            sh.cd dir
-            fetch_ref if fetch_ref?
-            checkout
+          if use_sparse_checkout?
+
+            sh.fold 'git.checkout' do
+              init_git_repo
+              sh.cd dir
+              config_sparse_checkout
+              pull_git_repo
+            end
+
+          else
+            sh.fold 'git.checkout' do
+              clone_or_fetch
+              sh.cd dir
+              fetch_ref if fetch_ref?
+              checkout
+            end
           end
+
         end
 
         private
@@ -44,6 +56,22 @@ module Travis
             args
           end
 
+          def init_git_repo
+            sh.cmd "git init #{dir}"
+            sh.cmd "git remote add origin #{data.source_url}"
+          end
+
+          def pull_git_repo
+            sh.cmd "git pull origin #{clone_args}"
+          end
+
+          def config_sparse_checkout
+            sh.cmd "git config core.sparseCheckout true"
+            sparse_checkout_files.each do |scf|
+              sh.file '.git/info/sparse-checkout', "#{scf}", append: true
+            end
+          end
+
           def depth
             config[:git][:depth].to_s.shellescape
           end
@@ -58,6 +86,14 @@ module Travis
 
           def dir
             data.slug
+          end
+
+          def use_sparse_checkout?
+            config[:git][:sparse_checkout]
+          end
+
+          def sparse_checkout_files
+            config[:git][:sparse_checkout_files]
           end
 
           def config
